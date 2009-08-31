@@ -1,0 +1,172 @@
+/*
+ * gltrixdraw.cpp
+ *
+ *  Created on: Aug 16, 2009
+ *      Author: mits
+ */
+
+#include "gltrixdraw.h"
+#include "gltrixgl.h"
+#include <cmath>
+
+const double pi=3.1415926;
+
+Camera::Camera()
+{
+	setPosition(0.0f, 0.0f, 0.0f);
+	setRotation(0.0f, 0.0f, 0.0f);
+	for (int i=0;i<16;i++)
+		matrix[i]=aux[i]=aux2[i]=0.0;
+	matrix[0]=matrix[5]=matrix[10]=matrix[15]=1.0;
+}
+
+Camera::Camera(afloat x, afloat y, afloat z, afloat rotx, afloat roty, afloat rotz)
+{
+	setPosition(x, y, z);
+	setRotation(rotx, roty, rotz);
+}
+
+afloat Camera::getx()	{ return this->x; }
+afloat Camera::gety()	{ return this->y; }
+afloat Camera::getz()	{ return this->z; }
+afloat Camera::getrotx()	{ return this->rotx; }
+afloat Camera::getroty()	{ return this->roty; }
+afloat Camera::getrotz()	{ return this->rotz; }
+
+void Camera::setPosition(afloat x, afloat y, afloat z)
+{
+	matrix[12] = x*matrix[0] + y*matrix[4] + z*matrix[8];
+	matrix[13] = x*matrix[1] + y*matrix[5] + z*matrix[9];
+	matrix[14] = x*matrix[2] + y*matrix[6] + z*matrix[10];
+}
+
+void Camera::setRotation(afloat rotx, afloat roty, afloat rotz)
+{
+	this->rotx = rotx;
+	this->roty = roty;
+	this->rotz = rotz;
+
+}
+
+void Camera::moveGlobal(afloat x, afloat y, afloat z)
+{
+	matrix[12] -= x*matrix[0] + y*matrix[4] + z*matrix[8];
+	matrix[13] -= x*matrix[1] + y*matrix[5] + z*matrix[9];
+	matrix[14] -= x*matrix[2] + y*matrix[6] + z*matrix[10];
+}
+
+void Camera::moveLocal(afloat x, afloat y, afloat z)
+{
+	matrix[12] -=x;
+	matrix[13] -=y;
+	matrix[14] -=z;
+}
+
+void Camera::rotateGlobal(afloat rad, afloat x, afloat y, afloat z)
+{
+	afloat xx,xy,xz,xw,yy,yz,yw,zz,zw;
+	xx=x*x;
+	xy=x*y;
+	xz=x*z;
+	xw=x*rad;
+	yy=y*y;
+	yz=y*z;
+	yw=y*rad;
+	zz=z*z;
+	zw=z*rad;
+	aux[0]=1-2*(yy+zz);
+	aux[1]=2*(xy-zw);
+	aux[2]=2*(xz+yw);
+	aux[4]=2*(xy+zw);
+	aux[5]=1-2*(xx+zz);
+	aux[6]=2*(yz-xw);
+	aux[8]=2*(xz-yw);
+	aux[9]=2*(yz+xw);
+	aux[10]=1-2*(xx+yy);
+	aux[3]=aux[7]=aux[11]=aux[12]=aux[13]=aux[14]=0.0;
+	aux[15]=1.0;
+	matrixMul44f(matrix,aux,aux2);
+	for(int i=0;i<16;i++)
+		matrix[i]=aux2[i];
+//	rotateRelX(rad*(rx*matrix[0] + ry*matrix[4] + rz*matrix[8]));
+//	rotateRelY(rad*(rx*matrix[1] + ry*matrix[5] + rz*matrix[9]));
+//	rotateRelZ(rad*(rx*matrix[2] + ry*matrix[6] + rz*matrix[10]));
+}
+void Camera::rotateRelX(afloat rotx)
+{
+	aux[0]=aux[15]=1.0;
+	aux[1]=aux[2]=aux[4]=aux[8]=aux[3]=aux[7]=aux[11]=aux[12]=aux[13]=aux[14]=0.0;
+	aux[5]=aux[10]=cos(rotx);
+	aux[6]=-sin(rotx);
+	aux[9]=sin(rotx);
+	matrixMul44f(matrix,aux,aux2);
+	for(int i=0;i<16;i++)
+		matrix[i]=aux2[i];
+}
+void Camera::rotateRelY(afloat roty)
+{
+	aux[0]=aux[10]=cos(roty);
+	aux[1]=aux[4]=aux[6]=aux[9]=aux[3]=aux[7]=aux[11]=aux[12]=aux[13]=aux[14]=0.0;
+	aux[2]=sin(roty);
+	aux[5]=aux[15]=1.0;
+	aux[8]=-sin(roty);
+	matrixMul44f(matrix,aux,aux2);
+	for(int i=0;i<16;i++)
+		matrix[i]=aux2[i];
+}
+void Camera::rotateRelZ(afloat rotz)
+{
+	aux[0]=aux[5]=cos(rotz);
+	aux[1]=-sin(rotz);
+	aux[2]=aux[6]=aux[8]=aux[9]=aux[10]=aux[3]=aux[7]=aux[11]=aux[12]=aux[13]=aux[14]=0.0;
+	aux[4]=sin(rotz);
+	aux[10]=aux[15]=1.0;
+	matrixMul44f(matrix,aux,aux2);
+	for(int i=0;i<16;i++)
+		matrix[i]=aux2[i];
+
+}
+
+
+void Camera::rotateLocal(afloat rad, afloat rx, afloat ry, afloat rz)
+{
+	rotateRelX(rad*rx);
+	rotateRelY(rad*ry);
+	rotateRelZ(rad*rz);
+}
+
+void Camera::updategl()
+{
+	glMatrixMode(GL_MODELVIEW);
+	glLoadMatrixf(matrix);
+	glGetFloatv(GL_MODELVIEW_MATRIX,mat);
+}
+
+void Camera::matrixMul44f(afloat *a, afloat *b, afloat *res)
+{
+	int x,y,i;
+	printMatrix(a);
+	printMatrix(b);
+	printMatrix(res);
+	for (i=0;i<16;i++)
+	{
+		x=i%4;
+		y=i/4;
+		res[i] = a[4*y]*b[x] + a[4*y+1]*b[4+x] + a[4*y+2]*b[8+x] + a[4*y+3]*b[12+x];
+	}
+	printMatrix(res);
+}
+
+#include <cstdio>
+
+void Camera::printMatrix(afloat *m)
+{
+	printf("camera matrix:\n");
+	printf("%f\t%f\t%f\t%f\n",m[0],m[1],m[2],m[3]);
+	printf("%f\t%f\t%f\t%f\n",m[4],m[5],m[6],m[7]);
+	printf("%f\t%f\t%f\t%f\n",m[8],m[9],m[10],m[11]);
+	printf("%f\t%f\t%f\t%f\n",m[12],m[13],m[14],m[15]);
+}
+
+
+Camera *theCamera;
